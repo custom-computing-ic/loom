@@ -1,0 +1,17 @@
+name: loom-examples
+
+channels:
+  - conda-forge
+  - defaults
+  - ckiddo74
+
+dependencies:
+  - python=3.12
+  - ckiddo74::heterograph=2.0
+  # - loom-ir
+  - pip
+  - pip:
+      - tensorflow
+      - -e ../
+
+
