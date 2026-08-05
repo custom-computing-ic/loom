@@ -1,6 +1,6 @@
 """Build, update, and validate a small NN-IR graph."""
 
-from nn_ir import NN_IR, NS
+from nn_ir import NN_IR
 
 
 def qint() -> dict[str, object]:
@@ -28,8 +28,12 @@ def build_graph():
 if __name__ == "__main__":
     graph = build_graph()
     pool = next(v for v in graph.vertices
-                if graph.pmap[v][NS]["_type"] == "SumPool")
+                if graph.pmap[v]["_type"] == "SumPool")
     NN_IR.update_vertex(graph, pool, axis=0)
     print(NN_IR.validate(graph))
 
-    print(graph.pmap)
+    x=NN_IR.new_vertex(graph, "Node", name=10)
+    print(graph.pmap[x])
+
+
+

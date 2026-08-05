@@ -1,6 +1,6 @@
 from .rule import Rule, RuleFn
 
-class RuleEngine:
+class Runner:
     """
     Executes a sequence of rules until fixed point.
 
@@ -59,7 +59,7 @@ class RuleEngine:
             modified_this_round = False
 
             if verbose:
-                print(f"[RuleEngine] Iteration {iteration}")
+                print(f"[Runner] Iteration {iteration}")
 
             for rule in self._rules:
                 changed = rule.apply(g)

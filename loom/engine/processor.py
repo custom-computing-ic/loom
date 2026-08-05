@@ -1,201 +1,59 @@
-from ast import pattern
-import inspect
-from heterograph.query.qgraph import QGraph
-from heterograph.query.processor_dfs import QueryProcessorDFS
 from heterograph.hgraph import HGraph
+from heterograph.query.qgraph import QGraph
+from .match_policy import IsoMatchPolicy
 
-from graph_tool.topology import subgraph_isomorphism
+class Processor:
+    def __init__(self, *, match_policy=IsoMatchPolicy(), snapshot=True):
+        self.match_policy = match_policy
+        self.snapshot = snapshot
+        if snapshot:
+            from heterograph.webview import WebView
+            self.webview = WebView()
+        else:
+            self.webview = None
+        self._snapshot_count = 0
 
-class MatchPolicy:
-    @staticmethod
-    def vx_annotation(qgraph, vx, **kwargs):
-        pass
+    # where(g, **match) -> bool
+    # finalize(g, **match) -> None (in-place modification)
+    def run(self, g:HGraph, *, 
+            select:str, 
+            where=None, 
+            rewrite:str|None=None,
+            finalize=None, **kwargs):
 
-    @staticmethod
-    def eg_annotation(qgraph, eg,  **kwargs):
-        pass
+        snapshot_number = self._snapshot_count
+        capture = self.snapshot and rewrite is not None
+        if capture:
+            self.webview.add_graph(g, title=f"original #{snapshot_number}")
 
-    @staticmethod
-    def vx_check(g, qgraph, vx, qvx):
-        return True
+        matches, pattern = self.match_policy.find_matches(
+            g=g, select=select, where=where, **kwargs)
 
-    @staticmethod
-    def eg_check(g, qgraph, eg, qeg):
-        return True
-    
-    @staticmethod
-    def check(g, qgraph, match):
-        return True
-
-class GraphProcessor:
-    match_algorithms = {
-        # 'dfs': '_find_dfs_matches',
-        'iso': '_find_iso_matches'
-    }
-
-    def __init__(self, *, 
-                 mode='iso', 
-                 deduplicate=False, 
-                 match_policy=None):
-        if mode not in self.match_algorithms:
-            raise ValueError(f"Unknown mode: {mode}")
-        
-        self.mode = mode        
-        self.deduplicate = deduplicate
-        self.match_policy = match_policy or MatchPolicy
-
-    def run(self, g:HGraph, *, find:str, where=None, rewrite:str|None=None, post=None, max_n=0):
-        # where(g, **match) -> bool
-        # post(g, **match) -> None (in-place modification)
-
-        search_alg = getattr(self,  self.match_algorithms[self.mode])
-
-        matches, pattern = search_alg(g=g, find=find, where=where, max_n=max_n)
-
-        if self.deduplicate and len(matches) > 1:
-            matches = self._deduplicate_matches(matches)
-
-   
         modified = False
-
 
         if rewrite and matches:
             modified = self._rewrite(
                 g=g,
                 rewrite=rewrite,
-                post=post,
+                finalize=finalize,
                 matches=matches,
                 find_pattern_graph=pattern
             )            
 
+        if capture:
+            self.webview.add_graph(g, title=f"rewrite #{snapshot_number}")
+            self._snapshot_count += 1
+
         return {'matches': matches, 'pattern': pattern, 'modified': modified}
 
-
-    def _deduplicate_matches(self, matches):
-        # depuplicate matches if requested
-        # e.g. match {x:1, y:2} and {x:1, y:2} are duplicates
-            
-        unique = {}
-        for m in matches:
-            key = frozenset(m.values())
-            if key not in unique:
-                unique[key] = m
-        matches = list(unique.values())   
-        return matches     
-    
-    def _find_dfs_matches(self, *, g:HGraph, find, where):
-
-        def node_pattern_annotations(qgraph:QGraph, vx, type=None, **kwargs):
-            qgraph.pmap[vx]['type'] = type
-
-        def edge_pattern_annotations(qgraph:QGraph, eg, dist=1, **kwargs):
-            qgraph.pmap[eg]['xdist'] = dist        
+    def snapshot_view(self):
+        """Display the captured snapshots in the processor's WebView."""
+        if self.webview is None:
+            raise RuntimeError("snapshot_view() requires Processor(snapshot=True).")
+        return self.webview.run()
 
 
-        find_pattern_graph = QGraph(find, 
-                                    vx_args=self.match_node_annotations, 
-                                    eg_args=self.match_edge_annotations)
-
-        # ---- Default where
-        if where is None:
-            match_filter  = lambda g, qg, match: True
-        else:
-            params = inspect.signature(where).parameters
-            params_in_signature = set(params.keys()) - {"g"}        
-            match_filter = lambda g, qg, match: where(g, **{k: v for k, v in match.items() if k in params_in_signature})            
-
-        # ---- Run query
-        qp = QueryProcessorDFS()
-
-        def distance_check(g, qgraph, chain, qchain):
-            qvx0 = qchain[0]
-            qvx1 = qchain[1]
-            
-
-            if qvx0 is not None and qvx1 is not None:
-                depths = g.pmap['dfs.depths']
-                dist = depths[chain[1]] - depths[chain[0]]
-                dist_constraint = qgraph.pmap[qchain]['xdist']
-                if dist_constraint == 'any':
-                    return True
-                else:                
-                    return dist == dist_constraint
-            else:
-                return True
-        
-        matches = qp.run(
-            g=g,
-            qgraph=find_pattern_graph,
-            path_check=distance_check,
-            match_filter=match_filter
-        )    
-
-        return (matches, find_pattern_graph)
-    
-    def _find_iso_matches(self, *, g, find, where, max_n=0):
-        find_pattern_graph = QGraph(find,                                     
-                                    vx_args=self.match_policy.vx_annotation, 
-                                    eg_args=self.match_policy.eg_annotation)
-
-        # --- Get underlying graph-tool graphs
-        host_gt = g.igraph
-        pattern_gt = find_pattern_graph.igraph
-
-        maps = subgraph_isomorphism(
-            pattern_gt,
-            host_gt,
-            induced=True,
-            subgraph=True,
-            generator=True
-        )     
-
-        matches = []
-
-        nmatches = 0
-        for vmap in maps:
-
-            bind = {}
-
-            found_match = True
-
-            qvx_to_vx = {}
-
-            for q_ivx in pattern_gt.vertices():
-                host_ivx = vmap[q_ivx]
-
-                q_vx = find_pattern_graph.to_vx[int(q_ivx)]
-                host_vx = g.to_vx[int(host_ivx)]
-
-                if not self.match_policy.vx_check(g, find_pattern_graph, host_vx, q_vx):
-                    found_match = False
-                    break
-
-                pid = find_pattern_graph.pmap[q_vx]['id']
-                bind[pid] = host_vx
-
-                qvx_to_vx[q_vx] = host_vx
-
-            if found_match:
-                for q_eg in find_pattern_graph.edges:
-                    host_eg = (qvx_to_vx[q_eg[0]], qvx_to_vx[q_eg[1]])
-                    if not self.match_policy.eg_check(g, find_pattern_graph, host_eg, q_eg):
-                        found_match = False
-                        break
-
-            # If found match, apply policy and where filter when applicable
-            if found_match and  \
-               self.match_policy.check(g, find_pattern_graph, bind) \
-               and (where is None or where(g, **bind)):
-                matches.append(bind)
-                nmatches += 1
-                if max_n > 0 and nmatches >= max_n:
-                    break
-
-
-        return (matches, find_pattern_graph) 
-
-    
-    def _rewrite(self, *, g, rewrite, post, matches, find_pattern_graph) -> bool:
+    def _rewrite(self, *, g, rewrite, finalize, matches, find_pattern_graph) -> bool:
 
 
         # ---- Overlap detection (mandatory for rewrite) ----
@@ -244,25 +102,15 @@ class GraphProcessor:
         deleted_ids   = L - R
         created_ids   = R - L
 
-        print("L IDs:", L)
-        print("R IDs:", R)
-        print("preserved IDs:", preserved_ids)
-        print("deleted IDs:", deleted_ids)
-        print("created IDs:", created_ids)
-
         LE = set([(find_pattern_graph.pmap[s]['id'],
                    find_pattern_graph.pmap[t]['id']) for (s, t) in find_pattern_graph.edges])
         
         RE = set([(rewrite_pattern_graph.pmap[s]['id'],
                    rewrite_pattern_graph.pmap[t]['id']) for (s, t) in rewrite_pattern_graph.edges])    
-        print("L edges:", LE)
-        print("R edges:", RE)
 
         add_internal_edges    = RE - LE      
         remove_internal_edges = LE - RE  
 
-        print("add internal edges:", add_internal_edges)
-        print("remove internal edges:", remove_internal_edges)
         
         # validate rewire constraints
         # ensure that the rewire sources are all in the deleted set
@@ -311,7 +159,6 @@ class GraphProcessor:
                     modified = True   
 
             # For each deleted id X that is inherited by RHS id Y
-            print(":::> rewire dict:", rewire_dict)
             # {'matmul': {'in': 'd', 'out': None}, 'act': {'in': None, 'out': 'd'}}
             for y_id, info in rewire_dict.items():      
                 y_vx = bind[y_id]                                
@@ -352,7 +199,6 @@ class GraphProcessor:
                 # ---- MUTATION PASS ----
                 if x_id_in:
                     x_vx = bind[x_id_in]
-                    print("::> rewire_in: ", x_vx)
                     for src_vx in g.in_vx(x_vx):
                         # we only add the edge if src_vx is outside the match boundary
                         if src_vx not in matched_vs:
@@ -370,8 +216,8 @@ class GraphProcessor:
                                 g.pmap[ret[0]] = g.pmap[(x_vx, dst_vx)].copy()
 
 
-            if post:                
-                if post(g, **bind) is True:
+            if finalize:                
+                if finalize(g, **bind) is True:
                     modified = True
 
             # -- remove internal edges (LHS edges not in RHS)
@@ -395,5 +241,3 @@ class GraphProcessor:
          
 
         return modified
-    
-

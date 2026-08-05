@@ -5,13 +5,18 @@ from pydantic import BaseModel, Field
 from heterograph import HGraph
 from loom.ir import IRSchema, Issue, Severity
 
-NS = "nn"
-
-
 class QInt(BaseModel):
     signed: bool
     int_bits: int
     frac_bits: int
+
+
+class NodeProps(BaseModel):
+    """Simple node type with three optional metadata fields."""
+    type_: Literal["Node"] = Field(alias="_type")
+    name: str | None = "juju"
+    shape: list[int] | None = None
+    qint: QInt | None = None
 
 
 class InputProps(BaseModel):
@@ -79,7 +84,7 @@ ARITY = {
 def rule_arity(graph: HGraph) -> list[Issue]:
     issues = []
     for vertex in graph.vertices:
-        op = graph.pmap[vertex].get(NS, {}).get("_type")
+        op = graph.pmap[vertex].get("_type")
         if op not in ARITY:
             continue
         expected_in, expected_out = ARITY[op]
@@ -111,7 +116,7 @@ def rule_acyclic(graph: HGraph) -> list[Issue]:
 
 def rule_single_output(graph: HGraph) -> list[Issue]:
     outputs = [v for v in graph.vertices
-               if graph.pmap[v].get(NS, {}).get("_type") == "Output"]
+               if graph.pmap[v].get("_type") == "Output"]
     if len(outputs) == 1:
         return []
     message = "no Output vertex" if not outputs else f"expected 1 Output, found {len(outputs)}"
@@ -120,8 +125,8 @@ def rule_single_output(graph: HGraph) -> list[Issue]:
 
 NN_IR = IRSchema(
     name="NN-IR",
-    namespace=NS,
     vertex_schema={
+        "Node": NodeProps,
         "Input": InputProps, "Embedding": EmbeddingProps, "Dense": DenseProps,
         "Add": AddProps, "SumPool": SumPoolProps, "BatchNorm": BatchNormProps,
         "ReLU": ReLUProps, "Output": OutputProps,

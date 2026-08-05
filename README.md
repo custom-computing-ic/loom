@@ -34,7 +34,7 @@ g.add_edge(b, c)
 
 gp = GraphProcessor()
 
-result = gp.run(g, find="x => y")
+result = gp.run(g, select="x => y")
 
 print(result["matches"])
 ```
@@ -48,10 +48,10 @@ gp = GraphProcessor(deduplicate=True)
 
 result = gp.run(
     g,
-    find="AQL pattern",
+    select="AQL pattern",
     where=optional_filter,
     rewrite="AQL replacement",
-    post=optional_callback
+    finalize=optional_callback
 )
 ```
 
@@ -68,12 +68,12 @@ Return value:
 
 # 1. Pattern Matching
 
-## AQL `find` Pattern
+## AQL `select` Pattern
 
 Example:
 
 ``` python
-find = "a => b => c"
+select = "a => b => c"
 ```
 
 Matches any chain of three connected vertices.
@@ -143,7 +143,7 @@ Rules:
 ## Basic Rewrite
 
 ``` python
-find = "a => b => c"
+select = "a => b => c"
 rewrite = "a => c"
 ```
 
@@ -188,7 +188,7 @@ Assume `x` deleted, `y` preserved.
 
 ## Example: Bypass Node
 
-    find:    a => b => c
+    select:  a => b => c
     rewrite: a => c
              b {rewire:c}
 
@@ -206,7 +206,7 @@ edge must exist in RHS or rewrite fails.
 # 5. Post Callback
 
 ``` python
-def post(g, a, c):
+def finalize(g, a, c):
     g.pmap[a]["optimized"] = True
     return True
 ```
@@ -225,7 +225,7 @@ For each match:
 2.  Create new nodes
 3.  Add RHS-only edges
 4.  Perform rewiring
-5.  Call `post`
+5.  Call `finalize`
 6.  Remove LHS-only edges
 7.  Remove deleted nodes
 
@@ -234,10 +234,10 @@ For each match:
 # 7. Fixed-Point Driver
 
 ``` python
-gp = GraphProcessor(mode="iso")
+gp = GraphProcessor()
 
 while True:
-    result = gp.run(g, find=..., rewrite=...)
+    result = gp.run(g, select=..., rewrite=...)
     if not result["modified"]:
         break
 ```
