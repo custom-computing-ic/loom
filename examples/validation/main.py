@@ -4,10 +4,12 @@ from nn_ir import NN_IR
 
 
 def qint() -> dict[str, object]:
+    """Return the quantization metadata used by the example graph."""
     return {"signed": True, "int_bits": 4, "frac_bits": 4}
 
 
 def build_graph():
+    """Construct a small valid NN-IR graph."""
     graph = NN_IR.new_graph()
     input_v = NN_IR.new_vertex(graph, "Input", shape=[4, 2], qint=qint())
     embedding_v = NN_IR.new_vertex(graph, "Embedding", in_features=2,
@@ -31,9 +33,5 @@ if __name__ == "__main__":
                 if graph.pmap[v]["_type"] == "SumPool")
     NN_IR.update_vertex(graph, pool, axis=0)
     print(NN_IR.validate(graph))
-
-    x=NN_IR.new_vertex(graph, "Node", name=10)
-    print(graph.pmap[x])
-
 
 

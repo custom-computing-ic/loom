@@ -37,7 +37,11 @@ class MatchPolicy(ABC):
 
     @abstractmethod
     def find_matches(self, *, g: HGraph, select: str, where=None, **kwargs):
-        """Return matching bindings and the parsed pattern graph."""
+        """Return bindings from the host graph and the parsed query graph.
+
+        Implementations may use different search strategies, but both apply
+        structural matching first and then semantic `where` filtering.
+        """
 
 
 class IsoMatchPolicy(MatchPolicy):

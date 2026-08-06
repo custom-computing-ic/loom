@@ -11,14 +11,6 @@ class QInt(BaseModel):
     frac_bits: int
 
 
-class NodeProps(BaseModel):
-    """Simple node type with three optional metadata fields."""
-    type_: Literal["Node"] = Field(alias="_type")
-    name: str | None = "juju"
-    shape: list[int] | None = None
-    qint: QInt | None = None
-
-
 class InputProps(BaseModel):
     type_: Literal["Input"] = Field(alias="_type")
     shape: list[int] = Field(min_length=1)
@@ -125,12 +117,11 @@ def rule_single_output(graph: HGraph) -> list[Issue]:
 
 NN_IR = IRSchema(
     name="NN-IR",
-    vertex_schema={
-        "Node": NodeProps,
+    vertex={
         "Input": InputProps, "Embedding": EmbeddingProps, "Dense": DenseProps,
         "Add": AddProps, "SumPool": SumPoolProps, "BatchNorm": BatchNormProps,
         "ReLU": ReLUProps, "Output": OutputProps,
     },
-    edge_schema={"data": DataEdgeProps},
+    edge={"data": DataEdgeProps},
     rules=[rule_arity, rule_acyclic, rule_single_output],
 )

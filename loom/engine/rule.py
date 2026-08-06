@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Callable, Optional, Any
 
 class Rule(ABC):
+    """Abstract graph transformation whose ``apply`` method returns ``bool``."""
     """
     Abstract rewrite rule.
 
@@ -30,6 +31,7 @@ class Rule(ABC):
 
 
 class RuleFn(Rule):
+    """Adapt a callable with signature ``fn(graph) -> bool`` into a Rule."""
     """
     Wraps a function into a Rule.
 

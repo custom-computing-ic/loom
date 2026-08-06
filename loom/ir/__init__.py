@@ -6,10 +6,12 @@ from .ir_schema import (
     Severity,
     ValidationReport,
 )
+from .schema_rule import CheckSchemaRule
 
 __all__ = [
     "Issue",
     "IRSchema",
     "Severity",
     "ValidationReport",
+    "CheckSchemaRule",
 ]

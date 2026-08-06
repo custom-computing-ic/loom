@@ -3,7 +3,9 @@ from heterograph.query.qgraph import QGraph
 from .match_policy import IsoMatchPolicy
 
 class Processor:
+    """Match AQL patterns and apply one in-place rewrite pass."""
     def __init__(self, *, match_policy=IsoMatchPolicy(), snapshot=True):
+        """Create a processor with an optional match policy and snapshots."""
         self.match_policy = match_policy
         self.snapshot = snapshot
         if snapshot:
@@ -54,6 +56,15 @@ class Processor:
 
 
     def _rewrite(self, *, g, rewrite, finalize, matches, find_pattern_graph) -> bool:
+        """Apply a parsed RHS to a disjoint set of LHS bindings.
+
+        The rewrite is performed in stages: create RHS-only vertices, add RHS
+        edges, redirect annotated boundary edges, run ``finalize``, remove
+        obsolete preserved-preserved edges, and finally delete LHS-only
+        vertices. Keeping cleanup last lets ``finalize`` inspect the complete
+        replacement while protecting the cleanup targets from accidental
+        removal.
+        """
 
 
         # ---- Overlap detection (mandatory for rewrite) ----
@@ -92,8 +103,7 @@ class Processor:
 
         rewrite_pattern_graph = QGraph(rewrite, 
                                        vx_args=node_pattern_annotations) 
-        
-  
+          
         # --- Precompute pattern-level sets
         L = set(find_pattern_graph.pmap['ids'].keys())
         R = set(rewrite_pattern_graph.pmap['ids'].keys())
@@ -111,24 +121,37 @@ class Processor:
         add_internal_edges    = RE - LE      
         remove_internal_edges = LE - RE  
 
+        if 0:
+            print(f"preserved_ids: {preserved_ids}")
+            print(f"deleted_ids: {deleted_ids}")
+            print(f"created_ids: {created_ids}")
+            print(f"LE: {LE}")
+            print(f"RE: {RE}")
+            print(f"add_internal_edges: {add_internal_edges}")
+            print(f"remove_internal_edges: {remove_internal_edges}")
+
         
-        # validate rewire constraints
-        # ensure that the rewire sources are all in the deleted set
-        # and that their targets are preserved nodes
-        # for x_id, info in rewire_dict.items():
-        #     if x_id not in deleted_ids:
-        #         raise RuntimeError(
-        #             "rewire id [%s] must be a removed node [%s]" % (x_id, deleted_ids)
-        #         )
-        #     if info["target"] not in created_ids:
-        #         raise RuntimeError(
-        #             "rewire target [%s] must be a created node [%s]" % (info["target"], created_ids)
-        #         )
+        # --- Validate rewire annotations ---
+        # The annotated node is the receiver and must exist in the RHS.
+        # The referenced node is the deleted source and must be LHS-only.
+        for receiver_id, info in rewire_dict.items():
+            if receiver_id not in R:
+                raise RuntimeError(
+                    f"rewire receiver [{receiver_id}] must exist in the RHS."
+                )
+
+            for direction in ("in", "out"):
+                source_id = info[direction]
+                if source_id is not None and source_id not in deleted_ids:
+                    raise RuntimeError(
+                        f"rewire source [{source_id}] must be deleted by the rewrite."
+                    )        
 
         # --- Apply rewrites for this single pass
         for m in matches:
-            # Skip invalidated matches (some vx may have been deleted by earlier rewrites)
+            # step 1: Detect invalidated matches (some vx may have been deleted by earlier rewrites)
             # Ensure all LHS ids in m still exist in graph
+
             if not g.check_vx(list(m.values()), verify=False):
                 vx_removed = { vx for vx in m.values() if not g.check_vx(vx, verify=False) }
                 
@@ -136,21 +159,25 @@ class Processor:
                                    "This indicates integrity issues with the rewrite rules. "
                                    f"Match: {m} / Removed vertices: {vx_removed}")                   
 
-            # --- Build full bindings dict
-            # Start with LHS bindings
+            # step 2: Build initial bindings 
             bind = dict(m)
 
-            # Create new vertices for created RHS IDs
+            # step 3: Add new vertices for RHS-only ids
             for rid in created_ids:
                 new_vx = g.add_vx(1)   # returns single vx
                 bind[rid] = new_vx
                 modified = True   
         
+            # add reverse_bind
             matched_vs  = set(bind.values())  # host vertices in match
             # Build reverse lookup: host_vx -> pattern_id
             reverse_bind = {vx: pid for pid, vx in bind.items()}            
 
-            # --- Internal edge additions (RHS edges not in LHS)
+            if 0:
+                print(f"bind: {bind}")
+                print(f"reverse_bind: {reverse_bind}")
+
+            # step 4: adding RHS-only edges: internal edge additions 
             for (sid, tid) in add_internal_edges:
                 s_vx = bind[sid]
                 t_vx = bind[tid]
@@ -167,57 +194,130 @@ class Processor:
                                                          
 
                 # ---- Conflict Detection ----
+                # Rewiring only redirects edges crossing the match boundary.
+                # If the other endpoint is inside the match and is preserved,
+                # redirecting it would implicitly create an internal RHS edge.
+                # That edge must be written explicitly in RE; otherwise the
+                # rewrite would silently change the internal graph structure.
+                # E.g., the follwowing is invalid because the internal edge (a, c) is not in the RHS:
+                # select="a => b",
+                # rewrite="a; c {rewire_in:b}",
 
-                # # Check incoming edges of x
-                # if rewire_in:
-                #     for src_vx in g.in_vx(x_vx):
-                #         if src_vx in matched_vs:
-                #             src_id = reverse_bind[src_vx]
-                #             implied_edge = (src_id, y_id)
-                #             if src_id != y_id: # we allow self-edges
-                #                 if implied_edge not in RE:
-                #                     raise RuntimeError(
-                #                         f"rewire_in conflict: deleting '{x_id}' and rewiring "
-                #                         f"would create internal edge {implied_edge}, "
-                #                         f"but RHS does not contain this edge."
-                #                     )
+                # Incoming edge: preserved source -> deleted source
+                # becomes preserved source -> receiver.
+                if info["in"] is not None:
+                    source_id = info["in"]
+                    source_vx = bind[source_id]
+                    for src_vx in g.in_vx(source_vx):
+                        if src_vx in matched_vs:
+                            src_id = reverse_bind[src_vx]
+                            if src_id in preserved_ids and src_id != y_id: # we allow self-edges
+                                if (src_id, y_id) not in RE:
+                                    raise RuntimeError(
+                                        f"rewire_in conflict: deleting '{source_id}' and rewiring "
+                                        f"would create internal edge {(src_id, y_id)}, "
+                                        f"but RHS does not contain this edge."
+                                    )
 
-                # # Check outgoing edges of x
-                # if rewire_out:
-                #     for dst_vx in g.out_vx(x_vx):
-                #         if dst_vx in matched_vs:
-                #             dst_id = reverse_bind[dst_vx]
-                #             implied_edge = (y_id, dst_id)
-                #             if y_id != dst_id:
-                #                 if implied_edge not in RE:
-                #                     raise RuntimeError(
-                #                         f"rewire_out conflict: deleting '{x_id}' and rewiring "
-                #                         f"would create internal edge {implied_edge}, "
-                #                         f"but RHS does not contain this edge."
-                #                     )                
+                # Outgoing edge: deleted source -> preserved destination
+                # becomes receiver -> preserved destination.
+                if info["out"] is not None:
+                    source_id = info["out"]
+                    source_vx = bind[source_id]
+                    for dst_vx in g.out_vx(source_vx):
+                        if dst_vx in matched_vs:
+                            dst_id = reverse_bind[dst_vx]
+                            if dst_id in preserved_ids and dst_id != y_id: # we allow self-edges
+                                if (y_id, dst_id) not in RE:
+                                    raise RuntimeError(
+                                        f"rewire_out conflict: deleting '{source_id}' and rewiring "
+                                        f"would create internal edge {(y_id, dst_id)}, "
+                                        f"but RHS does not contain this edge."
+                                    )                
 
                 # ---- MUTATION PASS ----
-                if x_id_in:
+                # Conflict detection has passed. Redirect only edges that
+                # cross the match boundary. The old edges remain until the
+                # deleted source vertices are removed below.
+
+                # Incoming rewiring:
+                #   external_source -> deleted_source
+                # becomes:
+                #   external_source -> receiver
+                if x_id_in is not None:
                     x_vx = bind[x_id_in]
                     for src_vx in g.in_vx(x_vx):
-                        # we only add the edge if src_vx is outside the match boundary
+                        # Internal edges are controlled explicitly by the RHS;
+                        # they must not be redirected in this pass.
                         if src_vx not in matched_vs:
                             ret = g.add_edge(src_vx, y_vx)
                             if ret:
+                                # Preserve edge metadata such as ports,
+                                # channels, and indices.
                                 g.pmap[ret[0]] = g.pmap[(src_vx, x_vx)].copy()  # copy properties from source vertex to new edge
-                
-                if x_id_out:
+
+                # Outgoing rewiring:
+                #   deleted_source -> external_destination
+                # becomes:
+                #   receiver -> external_destination
+                if x_id_out is not None:
                     x_vx = bind[x_id_out]
                     for dst_vx in g.out_vx(x_vx):
-                        # we only add the edge if dst_vx is outside the match boundary
+                        # As above, leave internal edges to the explicit RHS
+                        # edge additions and removals.
                         if dst_vx not in matched_vs:
                             ret = g.add_edge(y_vx, dst_vx)
                             if ret:                           
+                                # Copy metadata before the old source vertex
+                                # is removed together with its original edge.
                                 g.pmap[ret[0]] = g.pmap[(x_vx, dst_vx)].copy()
 
 
-            if finalize:                
-                if finalize(g, **bind) is True:
+            if finalize:
+                deleted_vxs = {bind[did] for did in deleted_ids}
+                planned_removed_edges = {
+                    edge for edge in g.edges
+                    if edge[0] in deleted_vxs or edge[1] in deleted_vxs
+                }
+                planned_removed_edges.update(
+                    (bind[sid], bind[tid])
+                    for sid, tid in remove_internal_edges
+                    if sid in preserved_ids and tid in preserved_ids
+                )
+
+                finalize_result = finalize(g, **bind)
+
+                # finalize may perform other graph updates, but it must not
+                # preempt this rewrite's cleanup. Deleted vertices must still
+                # exist so the rewrite can remove them, and LHS-only edges
+                # between preserved vertices must still exist so they can be
+                # removed below.
+                missing_deleted = [
+                    did for did in deleted_ids
+                    if not g.check_vx(bind[did], verify=False)
+                ]
+                if missing_deleted:
+                    raise RuntimeError(
+                        "finalize removed vertices that the rewrite must remove: "
+                        f"{missing_deleted}."
+                    )
+
+                missing_edges = [
+                    edge for edge in planned_removed_edges
+                    if not g.check_edge(edge)
+                ]
+                if missing_edges:
+                    raise RuntimeError(
+                        "finalize removed edges that the rewrite must remove: "
+                        f"{missing_edges}."
+                    )
+
+                if type(finalize_result) is not bool:
+                    raise RuntimeError(
+                        "finalize callback must return a bool, "
+                        f"got {type(finalize_result).__name__}."
+                    )
+                if finalize_result:
                     modified = True
 
             # -- remove internal edges (LHS edges not in RHS)
@@ -231,13 +331,11 @@ class Processor:
                         g.rm_edge((s_vx, t_vx))
                         modified = True                           
 
-            # -- remove deleted vertices 
+            # -- remove vertices marked to be removed
             for did in deleted_ids:
                 vx = bind[did]
                 if g.check_vx(vx, verify=False):
                     g.rm_vx(vx)
                     modified = True
-
-         
 
         return modified

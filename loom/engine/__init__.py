@@ -3,7 +3,7 @@
 from .processor import Processor
 from .match_policy import DfsMatchPolicy, IsoMatchPolicy
 from .rule import Rule, RuleFn
-from .runner import Runner
+from .runner import RulePhase, Runner
 
 __all__ = [
     "Processor",
@@ -12,4 +12,5 @@ __all__ = [
     "Rule",
     "RuleFn",
     "Runner",
+    "RulePhase",
 ]
