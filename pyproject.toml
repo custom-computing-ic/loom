@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "loom-ir"
-dynamic = ["version"]
+version = "0.2.0"
 description = "Schema validation and graph rewriting for Heterograph IRs"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -15,5 +15,3 @@ dependencies = [
 [tool.setuptools.packages.find]
 include = ["loom*"]
 
-[tool.setuptools.dynamic]
-version = {file = ["VERSION"]}

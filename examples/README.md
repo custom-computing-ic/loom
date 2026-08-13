@@ -93,7 +93,7 @@ Input → Dense(relu) → Dense(softmax) → Output
 ```
 
 `keras_to_nn.py` imports the model into NN-IR using the `IRSchema` factory API.
-`nn_op_lowering.py` defines a processor-backed `LowerDenseRule`. Each pass
+`nn_op_lowering.py` defines a processor-backed `LowerDenseAction`. Each pass
 matches a Dense node with its data input, weight, and bias, then rewrites it to:
 
 ```text
@@ -102,11 +102,11 @@ weight ────────┘
 bias ───────────────┘
 ```
 
-The rule lowers one layer per pass because adjacent Dense matches overlap.
-`Runner` repeats the NORMAL rule until both layers are lowered. PRE and POST
-`CheckSchemaRule` instances validate NN-IR before lowering and OP-IR afterward.
-Runner snapshots are enabled by default; the demo can display them with
-`runner.snapshot_view()` when that call is enabled in the entry point.
+The action lowers one layer per pass because adjacent Dense matches overlap.
+`FixedPointTask` repeats the iterative action until both layers are lowered. Pre and post
+`CheckSchemaAction` instances validate NN-IR before lowering and OP-IR afterward.
+FixedPointTask snapshots are enabled by default; the demo can display them with
+`task.snapshot_view()` when that call is enabled in the entry point.
 
 ## General execution note
 

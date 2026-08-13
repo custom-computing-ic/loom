@@ -1,16 +1,13 @@
-"""Runner assembly for lowering NN-IR graphs to OP-IR graphs."""
+"""Action assembly for lowering NN-IR graphs to OP-IR graphs."""
 
 from __future__ import annotations
 
-from collections.abc import Iterable
-
-from loom.engine import Processor, Rule, RulePhase, Runner
-from loom.ir import CheckSchemaRule
+from loom.engine import Action, ActionResult, Processor
 
 from nn_ir import NN_IR
 from op_ir import OP_IR
 
-class LowerDenseRule(Rule):
+class LowerDenseAction(Action):
     """Lower one Dense match per pass into primitive OP-IR operations."""
 
     def __init__(self):
@@ -68,11 +65,11 @@ class LowerDenseRule(Rule):
             g.pmap[edge] = {"_type": edge_type, "index": index}
         return True
 
-    def apply(self, g):
-        """Rewrite one matching Dense layer and report whether it changed ``g``."""
+    def apply(self, g) -> ActionResult:
+        """Rewrite one matching Dense layer and report its result."""
         # max_n=1 is intentional: adjacent Dense layers share a vertex across
         # matches, while Processor requires rewrite matches to be disjoint.
-        # Runner invokes this rule again for the next layer.
+        # FixedPointTask invokes this action again for the next layer.
         result = self.processor.run(
             g,
             select="(x| w| b) => d",
@@ -88,4 +85,4 @@ class LowerDenseRule(Rule):
         if modified:
             g.pmap["_type"] = OP_IR.name
             OP_IR.style(g)
-        return modified
+        return ActionResult(modified=modified)
