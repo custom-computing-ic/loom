@@ -26,7 +26,7 @@ class PipelineRunner:
     def __init__(self, pipeline_class: Type[Pipeline], *,
                  editable_tasks: set[str] | frozenset[str],
                  pipeline_kwargs: Mapping[str, Any] | None = None,
-                 forge: Mapping[str, str | Path] | None = None,
+                 draft: Mapping[str, str | Path] | None = None,
                  input_factory: Callable[[Any], Any] | None = None):
         if not isinstance(pipeline_class, type) or not issubclass(pipeline_class, Pipeline):
             raise TypeError("pipeline_class must be a Pipeline subclass.")
@@ -34,14 +34,14 @@ class PipelineRunner:
         self._pipeline_kwargs = dict(pipeline_kwargs or {})
         self._editable_tasks = frozenset(editable_tasks)
         paths = {
-            name: Path(path) for name, path in (forge or {}).items()
+            name: Path(path) for name, path in (draft or {}).items()
         }
         unknown_paths = set(paths) - self._editable_tasks
         if unknown_paths:
             raise ValueError(
                 f"Task paths are not editable: {sorted(unknown_paths)!r}"
             )
-        self._forge = MappingProxyType(paths)
+        self._draft = MappingProxyType(paths)
         self._input_factory = input_factory or (lambda value: value)
 
     @property
@@ -49,8 +49,8 @@ class PipelineRunner:
         return self._editable_tasks
 
     @property
-    def forge(self) -> Mapping[str, Path]:
-        return self._forge
+    def draft(self) -> Mapping[str, Path]:
+        return self._draft
 
     def run(self, input: Any, task_factories: TaskFactories) -> PipelineResult:
         """Execute with candidate implementations for editable task slots."""
@@ -79,8 +79,8 @@ class AgentContext:
         return self.runner.editable_tasks
 
     @property
-    def forge(self) -> Mapping[str, Path]:
-        return self.runner.forge
+    def draft(self) -> Mapping[str, Path]:
+        return self.runner.draft
 
     def run(self, task_factories: TaskFactories) -> PipelineResult:
         return self.runner.run(self.input, task_factories)

@@ -59,10 +59,10 @@ class TaskGen:
         unknown = self.tasks - context.editable_tasks
         if unknown:
             raise ValueError(f"Tasks are not editable: {sorted(unknown)!r}")
-        missing = self.tasks - set(context.forge)
+        missing = self.tasks - set(context.draft)
         if missing:
-            raise KeyError(f"Tasks have no forge path: {sorted(missing)!r}")
-        return {name: context.forge[name] for name in self.tasks}
+            raise KeyError(f"Tasks have no draft path: {sorted(missing)!r}")
+        return {name: context.draft[name] for name in self.tasks}
 
     @staticmethod
     def _prompt(name: str, source: str, failure: Exception | None) -> str:
@@ -76,7 +76,7 @@ class TaskGen:
             feedback = f"Task/runtime exception: {type(failure).__name__}: {failure}"
         return (
             f"Editable task name: {name}\n\n"
-            f"Current forge module:\n```python\n{source}\n```\n\n"
+            f"Current draft module:\n```python\n{source}\n```\n\n"
             f"Execution feedback:\n{feedback}\n\n"
             "Return a complete replacement module. Do not use Markdown fences "
             "inside the source field."
@@ -85,7 +85,7 @@ class TaskGen:
     @staticmethod
     def _factory(path: Path, class_name: str) -> TaskFactory:
         def factory(pipeline: Pipeline) -> Task:
-            module_name = f"loom_forge_{path.stem}_{uuid4().hex}"
+            module_name = f"loom_draft_{path.stem}_{uuid4().hex}"
             spec = importlib.util.spec_from_file_location(module_name, path)
             if spec is None or spec.loader is None:
                 raise ImportError(f"Cannot load task module from {path}")

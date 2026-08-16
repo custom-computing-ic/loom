@@ -16,7 +16,7 @@ from loom.agent import AgentLoop, AgentContext, PipelineRunner, TaskFactories
 from main import LoweringPipeline, build_keras_model
 
 
-TASK_PATH = Path(__file__).parent / "forge" / "lower_dense_task.py"
+TASK_PATH = Path(__file__).parent / "draft" / "lower_dense_task.py"
 
 
 def build_task_factory(path):
@@ -34,13 +34,13 @@ def build_task_factory(path):
 class PlaceholderAgent:
     def initial_tasks(self, context: AgentContext) -> TaskFactories:
         return {"lower-dense": build_task_factory(
-            context.forge["lower-dense"]
+            context.draft["lower-dense"]
         )}
 
     def revise_tasks(self, context: AgentContext, *, failure: Exception) -> TaskFactories:
         print(f"agent feedback: {type(failure).__name__}: {failure}")
         return {"lower-dense": build_task_factory(
-            context.forge["lower-dense"]
+            context.draft["lower-dense"]
         )}
 
 
@@ -48,7 +48,7 @@ if __name__ == "__main__":
     runner = PipelineRunner(
         LoweringPipeline,
         editable_tasks={"lower-dense"},
-        forge={"lower-dense": TASK_PATH},
+        draft={"lower-dense": TASK_PATH},
     )
     result = AgentLoop(runner).run(build_keras_model(), PlaceholderAgent())
     print(result.output)

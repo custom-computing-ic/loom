@@ -135,7 +135,7 @@ Action abstraction and does not require a graph or an IR.
 `loom.agent` provides a restricted interface for an external agent to develop
 and revise selected Task implementations. The agent receives an
 `AgentContext`, which exposes the pipeline runner, the names of editable tasks,
-and their forge locations. It does not receive the pipeline implementation or
+and their draft locations. It does not receive the pipeline implementation or
 the human-written contracts.
 
 ```python
@@ -146,8 +146,8 @@ from loom.agent import AgentLoop, PipelineRunner
 runner = PipelineRunner(
     LoweringPipeline,
     editable_tasks={"lower-dense"},
-    forge={
-        "lower-dense": Path("examples/agent/forge/lower_dense_task.py"),
+    draft={
+        "lower-dense": Path("examples/agent/draft/lower_dense_task.py"),
     },
 )
 result = AgentLoop(runner).run(input_value, agent)
@@ -155,16 +155,16 @@ result = AgentLoop(runner).run(input_value, agent)
 
 The pipeline merges its builtin task factories with the agent-provided
 factories. Only the explicitly editable task slots can be replaced. Each
-attempt loads the candidate task from the forge and executes the unchanged
+attempt loads the candidate task from the draft and executes the unchanged
 pipeline and contracts.
 
 Task exceptions are passed to the agent as normal exceptions. Contract
 failures are raised by `Verifier` as `ContractException`, carrying the
 execution result and contract results. An agent can use this feedback to
-revise the forged task and retry until the contracts pass or the loop reaches
+revise the draft task and retry until the contracts pass or the loop reaches
 its attempt limit.
 
-The lowering integration example is in `examples/agent`. Its forge currently
+The lowering integration example is in `examples/agent`. Its draft currently
 contains an intentionally disabled OP-IR update so the contract-failure path
 can be exercised; uncomment those lines to restore the successful task.
 
@@ -173,7 +173,7 @@ can be exercised; uncomment those lines to restore the successful task.
 Select a provider, model, and the task names that `TaskGen` may revise:
 
 ```bash
-pip install loom-agent
+pip install loom-workflow
 ```
 
 ```python
@@ -186,8 +186,8 @@ agent = TaskGen(
 result = AgentLoop(runner).run(input_value, agent)
 ```
 
-`TaskGen` sends only the selected forge module and execution feedback to its
-provider. It writes the returned replacement module into that forge path and
+`TaskGen` sends only the selected draft module and execution feedback to its
+provider. It writes the returned replacement module into that draft path and
 returns a factory for the next pipeline attempt. `PydanticAIProvider` owns the
 provider-specific model routing; another backend can implement `Provider`
 without changing `TaskGen`.
