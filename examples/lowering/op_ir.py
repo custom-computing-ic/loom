@@ -7,7 +7,7 @@ from typing import Literal
 from heterograph import HGraph
 from pydantic import BaseModel, Field
 
-from loom.ir import IRSchema, Issue, Severity
+from loom.graphite import GraphSchema, Issue, Severity
 
 
 class OpProps(BaseModel):
@@ -47,7 +47,7 @@ def rule_acyclic(graph: HGraph) -> list[Issue]:
             if any(color[v] == 0 and visit(v) for v in graph.vertices) else [])
 
 
-OP_IR = IRSchema(
+OP_IR = GraphSchema(
     name="OP-IR",
     vertex={
         "Input": ValueProps,

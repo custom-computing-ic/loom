@@ -9,10 +9,7 @@ from heterograph.hgraph import HGraph
 from heterograph.query.processor_dfs import QueryProcessorDFS
 from heterograph.query.qgraph import QGraph
 
-from .utils import deduplicate_matches
-
-
-class MatchPolicy(ABC):
+class MatchStrategy(ABC):
     """Interface for matching algorithms and semantic match constraints."""
 
     @staticmethod
@@ -44,7 +41,15 @@ class MatchPolicy(ABC):
         """
 
 
-class IsoMatchPolicy(MatchPolicy):
+def deduplicate_matches(matches):
+    """Remove matches covering the same host vertices, preserving order."""
+    unique = {}
+    for match in matches:
+        unique.setdefault(frozenset(match.values()), match)
+    return list(unique.values())
+
+
+class IsoMatchStrategy(MatchStrategy):
     """Match patterns using graph-tool subgraph isomorphism."""
 
     def find_matches(self, *, g, select, where=None, **kwargs):
@@ -76,7 +81,7 @@ class IsoMatchPolicy(MatchPolicy):
         return matches, pattern
 
 
-class DfsMatchPolicy(MatchPolicy):
+class DfsMatchStrategy(MatchStrategy):
     """Match patterns using Heterograph's DFS query processor."""
 
     def find_matches(self, *, g, select, where=None, **kwargs):

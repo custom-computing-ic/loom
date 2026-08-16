@@ -45,7 +45,7 @@ The important idea is that the schema validates both metadata and structural
 invariants. The example checks operation arity, acyclicity, and the expected
 number of output vertices.
 
-## Demo 2: Processor matching and rewriting
+## Demo 2: GraphProcessor matching and rewriting
 
 Directory: `processor_tests`
 
@@ -55,7 +55,7 @@ Run:
 python examples/processor_tests/main.py
 ```
 
-This is a lightweight executable test suite for `Processor`. It demonstrates:
+This is a lightweight executable test suite for `GraphProcessor`. It demonstrates:
 
 - AQL chain and fan-in matching;
 - semantic filtering with `where`;
@@ -92,8 +92,8 @@ This demo builds a two-layer Keras model:
 Input → Dense(relu) → Dense(softmax) → Output
 ```
 
-`keras_to_nn.py` imports the model into NN-IR using the `IRSchema` factory API.
-`nn_op_lowering.py` defines a processor-backed `LowerDenseAction`. Each pass
+`ImportKerasTask` imports the model into NN-IR using the `GraphSchema` factory API.
+`lower_dense_task.py` defines a `GraphProcessor`-backed `LowerDenseTask`. Each pass
 matches a Dense node with its data input, weight, and bias, then rewrites it to:
 
 ```text
@@ -102,11 +102,8 @@ weight ────────┘
 bias ───────────────┘
 ```
 
-The action lowers one layer per pass because adjacent Dense matches overlap.
-`FixedPointTask` repeats the iterative action until both layers are lowered. Pre and post
-`CheckSchemaAction` instances validate NN-IR before lowering and OP-IR afterward.
-FixedPointTask snapshots are enabled by default; the demo can display them with
-`task.snapshot_view()` when that call is enabled in the entry point.
+The Pipeline verifies the NN-IR contract after `ImportKerasTask`, repeats the
+lowering Task until it reaches a fixed point, then verifies the OP-IR contract.
 
 ## General execution note
 

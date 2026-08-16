@@ -1,18 +1,19 @@
-"""Action assembly for lowering NN-IR graphs to OP-IR graphs."""
+"""Task for lowering NN-IR graphs to OP-IR graphs."""
 
 from __future__ import annotations
 
-from loom.engine import Action, ActionResult, Processor
+from loom.core import Task, TaskResult
+from loom.graphite import GraphProcessor
 
 from nn_ir import NN_IR
 from op_ir import OP_IR
 
-class LowerDenseAction(Action):
+class LowerDenseTask(Task):
     """Lower one Dense match per pass into primitive OP-IR operations."""
 
-    def __init__(self):
-        super().__init__(name="lower-dense", description="Dense to MatMul/BiasAdd/Activation")
-        self.processor = Processor(snapshot=False)
+    def __init__(self, pipeline):
+        super().__init__(pipeline, name="lower-dense", description="Dense to MatMul/BiasAdd/Activation")
+        self.processor = GraphProcessor(snapshot=False)
 
     @staticmethod
     def _where(g, x, d, w, b):
@@ -65,11 +66,11 @@ class LowerDenseAction(Action):
             g.pmap[edge] = {"_type": edge_type, "index": index}
         return True
 
-    def apply(self, g) -> ActionResult:
+    def execute(self, g) -> TaskResult:
         """Rewrite one matching Dense layer and report its result."""
         # max_n=1 is intentional: adjacent Dense layers share a vertex across
-        # matches, while Processor requires rewrite matches to be disjoint.
-        # FixedPointTask invokes this action again for the next layer.
+        # matches, while GraphProcessor requires rewrite matches to be disjoint.
+        # Pipeline.repeat() invokes this task again for the next layer.
         result = self.processor.run(
             g,
             select="(x| w| b) => d",
@@ -85,4 +86,4 @@ class LowerDenseAction(Action):
         if modified:
             g.pmap["_type"] = OP_IR.name
             OP_IR.style(g)
-        return ActionResult(modified=modified)
+        return TaskResult(output=g, modified=modified)

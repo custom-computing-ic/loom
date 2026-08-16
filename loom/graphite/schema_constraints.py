@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from heterograph import HGraph
 
-from .ir_schema import Issue, Severity
+from .schema import Issue, Severity
 
 
 def require_type(graph: HGraph) -> list[Issue]:
@@ -31,4 +31,4 @@ def require_graph_type(graph: HGraph, schema_name: str) -> list[Issue]:
     return []
 
 
-BUILTIN_RULES = [require_graph_type, require_type]
+SCHEMA_CONSTRAINTS = [require_graph_type, require_type]

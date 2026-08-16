@@ -8,20 +8,13 @@ os.environ["CUDA_VISIBLE_DEVICES"] = ""
 from tensorflow import keras
 from tensorflow.keras.layers import Dense
 
-from keras_to_nn import build as build_keras_to_nn
-from loom.engine import (
-    Contract,
-    ContractResult,
-    FixedPointTask,
-    Pipeline,
-    PipelineResult,
-    Verifier,
-)
-from loom.ir import CheckSchemaAction
+from import_keras_task import ImportKerasTask
+from loom.core import Pipeline, PipelineResult, Verifier
+from loom.graphite import GraphSchemaContract
 
 from nn_ir import NN_IR
 from op_ir import OP_IR
-from nn_op_lowering import LowerDenseAction
+from lower_dense_task import LowerDenseTask
 
 def build_keras_model(input_dim=16, hidden=32, output=10, batch_size=2):
     """Build the two-layer Keras model used by the lowering example."""
@@ -34,63 +27,43 @@ def build_keras_model(input_dim=16, hidden=32, output=10, batch_size=2):
 class LoweringPipeline(Pipeline):
     """Import and lower a Keras graph through the NN-IR and OP-IR stages."""
 
-    def __init__(self):
-        super().__init__(name="keras-to-op-ir")
-        self.lowering = FixedPointTask(
-            pre=[CheckSchemaAction(NN_IR)],
-            iterative=[LowerDenseAction()],
-            post=[CheckSchemaAction(OP_IR)],
-        )
+    def builtin_task_factories(self):
+        return {
+            "import-keras": lambda pipeline: ImportKerasTask(pipeline),
+            "lower-dense": lambda pipeline: LowerDenseTask(pipeline),
+        }
 
-    def execute(self, model, *, workflow: str = "lower") -> PipelineResult:
-        graph = build_keras_to_nn(model)
-        if workflow == "import":
-            return PipelineResult(output=graph)
-        if workflow != "lower":
-            raise ValueError(f"unknown workflow {workflow!r}")
-        task_result = self.lowering.execute(graph)
+    def __init__(self, task_factories=None):
+        super().__init__(name="keras-to-op-ir", task_factories=task_factories)
+        self.import_model = self.register("import-keras")
+        self.lowering = self.register("lower-dense")
+        self.source_verifier = Verifier([GraphSchemaContract(NN_IR)])
+        self.target_verifier = Verifier([GraphSchemaContract(OP_IR)])
+
+    def execute(self, model) -> PipelineResult:
+        import_result = self.import_model.execute(model)
+        source_contracts = self.source_verifier.verify(import_result)
+        graph = import_result.output
+        lower_result = self.repeat(self.lowering, graph)
+        target_contracts = self.target_verifier.verify(lower_result)
         return PipelineResult(
             output=graph,
-            modified=task_result.modified,
-        )
-
-
-class SchemaContract(Contract):
-    """Check that a workflow produces a graph valid for one IR schema."""
-
-    def __init__(self, *, name, pipeline, workflow, schema):
-        super().__init__(name=name, pipeline=pipeline, workflow=workflow)
-        self.schema = schema
-
-    def evaluate(self, pipeline_result: PipelineResult) -> ContractResult:
-        report = self.schema.validate(pipeline_result.output)
-        return ContractResult(
-            passed=report.ok,
-            output=pipeline_result.output,
-            failures=[str(issue) for issue in report.errors],
-            metrics={"errors": len(report.errors), "issues": len(report.issues)},
+            modified=lower_result.modified,
+            metadata={
+                "contract_results": {
+                    "import": source_contracts,
+                    "lower": target_contracts,
+                },
+            },
+            task_results={"import": import_result, "lower": lower_result},
         )
 
 
 if __name__ == "__main__":
-    # The pre check validates the imported NN-IR, the iterative action lowers
-    # one Dense layer per iteration, and the post check validates the OP-IR result.
     model = build_keras_model()
     pipeline = LoweringPipeline()
-    verifier = Verifier([
-        SchemaContract(
-            name="valid-source-ir",
-            pipeline=pipeline,
-            workflow="import",
-            schema=NN_IR,
-        ),
-        SchemaContract(
-            name="valid-target-ir",
-            pipeline=pipeline,
-            workflow="lower",
-            schema=OP_IR,
-        ),
-    ])
-    results = verifier.verify(model)
-    print({name: result.passed for name, result in results.items()})
-    pipeline.lowering.snapshot_view()
+    result = pipeline.execute(model)
+    print({
+        stage: {name: check.passed for name, check in checks.items()}
+        for stage, checks in result.metadata["contract_results"].items()
+    })

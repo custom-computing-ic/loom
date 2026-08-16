@@ -6,7 +6,7 @@ Run from the repository root with::
 """
 
 from heterograph import HGraph
-from loom.engine import Processor
+from loom.graphite import GraphProcessor
 
 
 def graph(n, edges=()):
@@ -31,7 +31,7 @@ def expect_error(fn, message):
 
 def test_basic_match():
     g = graph(3, [(0, 1), (1, 2)])
-    p = Processor()
+    p = GraphProcessor()
     result = p.run(g, select="a => b => c")
     assert result["matches"] == [{"a": 0, "b": 1, "c": 2}]
     assert result["modified"] is False
@@ -39,7 +39,7 @@ def test_basic_match():
 
 def test_where_and_no_match():
     g = graph(3, [(0, 1), (1, 2)])
-    p = Processor()
+    p = GraphProcessor()
     result = p.run(g, select="a => b", where=lambda g, a, b: a == 1)
     assert result["matches"] == [{"a": 1, "b": 2}]
     assert p.run(g, select="a => b", where=lambda g, a, b: False)["matches"] == []
@@ -47,7 +47,7 @@ def test_where_and_no_match():
 
 def test_disjoint_rewrites_and_single_pass():
     g = graph(6, [(0, 1), (1, 2), (3, 4), (4, 5)])
-    p = Processor()
+    p = GraphProcessor()
     result = p.run(g, select="a => b => c", rewrite="a => c")
     assert result["modified"] is True
     assert_edges(g, [(0, 2), (3, 5)])
@@ -55,7 +55,7 @@ def test_disjoint_rewrites_and_single_pass():
     # A three-node chain produces overlapping two-node matches. This is
     # expected and must be rejected before rewriting begins.
     g = graph(3, [(0, 1), (1, 2)])
-    p = Processor()
+    p = GraphProcessor()
     expect_error(
         lambda: p.run(g, select="a => b", rewrite="a => x"),
         "overlapping two-node matches in a three-node chain",
@@ -63,7 +63,7 @@ def test_disjoint_rewrites_and_single_pass():
 
     # Separate two-node matches are rewritten successfully in one pass.
     g = graph(4, [(0, 1), (2, 3)])
-    p = Processor()
+    p = GraphProcessor()
     result = p.run(g, select="a => b", rewrite="a => x")
     assert result["modified"] is True
     assert_edges(g, [(0, 4), (2, 5)])
@@ -74,7 +74,7 @@ def test_disjoint_rewrites_and_single_pass():
 def test_created_nodes_and_finalize():
     g = graph(2, [(0, 1)])
     seen = {}
-    p = Processor()
+    p = GraphProcessor()
 
     def finalize(g, a, b, c):
         seen.update(a=a, b=b, c=c)
@@ -90,7 +90,7 @@ def test_created_nodes_and_finalize():
 
 def test_finalize_requires_boolean_result():
     g = graph(2, [(0, 1)])
-    p = Processor()
+    p = GraphProcessor()
 
     def invalid_finalize(g, a, b):
         return None
@@ -108,7 +108,7 @@ def test_finalize_requires_boolean_result():
 
 def test_finalize_rejects_structural_mutation():
     g = graph(3, [(0, 1), (1, 2)])
-    p = Processor()
+    p = GraphProcessor()
 
     def remove_vertex(g, a, b, c):
         g.rm_vx(b)
@@ -122,7 +122,7 @@ def test_finalize_rejects_structural_mutation():
     )
 
     g = graph(3, [(0, 1), (1, 2)])
-    p = Processor()
+    p = GraphProcessor()
 
     def remove_edge(g, a, b, c):
         g.rm_edge((a, b))
@@ -140,17 +140,17 @@ def test_rewire_directions():
     base = [(0, 1), (1, 2), (3, 4), (4, 5)]
     g = graph(6, base)
     
-    p = Processor()
+    p = GraphProcessor()
     p.run(g, select="a => b => c", rewrite="a => x {rewire: b}=> c")               
     assert_edges(g, [(0, 6), (6, 2), (3, 7), (7, 5)])
 
     g = graph(6, base)
-    p = Processor()
+    p = GraphProcessor()
     p.run(g, select="a => b => c", rewrite="a => c; c {rewire_in:b}")
     assert_edges(g, [(0, 2), (3, 5)])
 
     g = graph(6, base)
-    p = Processor()
+    p = GraphProcessor()
     expect_error(
         lambda: p.run(g, select="a => b => c", rewrite="a => c; b {rewire_out:c}"),
          "rewire source [c] must be deleted by the rewrite"
@@ -160,7 +160,7 @@ def test_rewire_directions():
 def test_rewire_external_edges_to_created_receiver():
 
     g = graph(5, [(0, 1), (1, 2), (3, 1), (1, 4)]) 
-    p = Processor()
+    p = GraphProcessor()
 
     expect_error(
     lambda:p.run(
@@ -174,7 +174,7 @@ def test_rewire_external_edges_to_created_receiver():
 
 def test_internal_rewire_validation():
     g = graph(3, [(0, 1), (1, 2)])
-    p = Processor()
+    p = GraphProcessor()
     expect_error(
         lambda: p.run(
             g, select="a => b => c", rewrite="a => c; b {rewire_out:c}"
@@ -185,7 +185,7 @@ def test_internal_rewire_validation():
     # The internal edge a -> b would be redirected to a -> x, but the RHS
     # contains no a -> x edge. Since a is preserved, this must be rejected.
     g = graph(2, [(0, 1)])
-    p = Processor()
+    p = GraphProcessor()
     expect_error(
         lambda: p.run(
             g, select="a => b", rewrite="a; x {rewire_in:b}"
@@ -196,7 +196,7 @@ def test_internal_rewire_validation():
 
 def test_overlap_and_annotation_validation():
     g = graph(3, [(0, 1), (1, 2)])
-    p = Processor()
+    p = GraphProcessor()
     expect_error(
         lambda: p.run(g, select="a => b", rewrite="a"),
         "overlapping matches",

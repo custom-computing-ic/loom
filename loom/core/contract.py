@@ -1,15 +1,35 @@
-"""Contracts for verifying pipeline workflows."""
+"""Contracts for verifying execution results."""
+
+from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Iterable
 
-from .pipeline import Pipeline, PipelineResult
+from .result import Result
+
+
+class ContractException(Exception):
+    """Raised when a contract rejects an execution result."""
+
+    def __init__(self, result: Result,
+                 contract_results: dict[str, ContractResult]):
+        self.result = result
+        self.contract_results = contract_results
+        self.failures = {
+            name: contract_result
+            for name, contract_result in contract_results.items()
+            if not contract_result.passed
+        }
+        super().__init__(
+            f"{len(self.failures)} contract(s) failed: "
+            f"{list(self.failures)}"
+        )
 
 
 @dataclass(frozen=True)
 class ContractResult:
-    """Result of verifying one pipeline workflow."""
+    """Result of verifying one execution result."""
 
     passed: bool
     output: Any = None
@@ -25,36 +45,32 @@ class ContractResult:
 
 
 class Contract(ABC):
-    """Human-defined acceptance criteria for one pipeline workflow."""
+    """Human-defined acceptance criteria for a Task or Pipeline result."""
 
     def __init__(
         self,
         *,
         name: str,
-        pipeline: Pipeline,
-        workflow: str = "default",
     ):
         if not name:
             raise ValueError("Contract must have a name.")
-        if not isinstance(pipeline, Pipeline):
-            raise TypeError("Contract requires a Pipeline instance.")
         self.name = name
-        self.pipeline = pipeline
-        self.workflow = workflow
 
-    def verify(self, input: Any) -> ContractResult:
-        """Run the configured workflow and evaluate its result."""
-        pipeline_result = self.pipeline.execute(input, workflow=self.workflow)
-        if not isinstance(pipeline_result, PipelineResult):
+    def verify(self, result: Result) -> ContractResult:
+        """Evaluate one explicit execution result."""
+        if not isinstance(result, Result):
+            raise TypeError("Contract.verify() requires a Result instance.")
+        contract_result = self.evaluate(result)
+        if not isinstance(contract_result, ContractResult):
             raise RuntimeError(
-                f"pipeline returned {type(pipeline_result).__name__}; "
-                "Pipeline.execute() must return PipelineResult"
+                f"contract {self.name} returned {type(contract_result).__name__}; "
+                "Contract.evaluate() must return ContractResult"
             )
-        return self.evaluate(pipeline_result)
+        return contract_result
 
     @abstractmethod
-    def evaluate(self, pipeline_result: PipelineResult) -> ContractResult:
-        """Evaluate the result produced by the configured workflow."""
+    def evaluate(self, result: Result) -> ContractResult:
+        """Evaluate one explicit TaskResult or PipelineResult."""
         pass
 
 
@@ -66,17 +82,19 @@ class Verifier:
         if not all(isinstance(contract, Contract) for contract in self.contracts):
             raise TypeError("contracts must contain only Contract instances.")
 
-    def verify(self, input: Any) -> dict[str, ContractResult]:
+    def verify(self, result: Result) -> dict[str, ContractResult]:
         """Run all contracts, retaining failures from each contract."""
         results: dict[str, ContractResult] = {}
         for contract in self.contracts:
             try:
-                results[contract.name] = contract.verify(input)
+                results[contract.name] = contract.verify(result)
             except Exception as error:
                 results[contract.name] = ContractResult(
                     passed=False,
                     failures=[f"{type(error).__name__}: {error}"],
                 )
+        if not self.passed(results):
+            raise ContractException(result, results)
         return results
 
     @staticmethod

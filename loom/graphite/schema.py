@@ -50,7 +50,7 @@ Rule = Callable[[HGraph], list[Issue]]
 
 
 @dataclass
-class IRSchema:
+class GraphSchema:
     """Declarative metadata schema, validation, construction, and styling."""
     name: str
     graph: Type[BaseModel] | None = None
@@ -133,7 +133,7 @@ class IRSchema:
         """Return a report covering graph, item metadata, and structural rules."""
         issues: list[Issue] = []
 
-        from .builtin_rules import require_graph_type, require_type
+        from .schema_constraints import require_graph_type, require_type
         issues += require_graph_type(graph, self.name)
         issues += require_type(graph)
 

@@ -7,7 +7,7 @@ from typing import Literal
 from heterograph import HGraph
 from pydantic import BaseModel, Field
 
-from loom.ir import IRSchema, Issue, Severity
+from loom.graphite import GraphSchema, Issue, Severity
 
 
 class TensorProps(BaseModel):
@@ -67,7 +67,7 @@ def rule_acyclic(graph: HGraph) -> list[Issue]:
             if any(color[v] == 0 and visit(v) for v in graph.vertices) else [])
 
 
-class NNIRSchema(IRSchema):
+class NNIRSchema(GraphSchema):
     """NN-IR schema with role-specific graph visualization."""
     def style(self, graph: HGraph) -> None:
         palette = {

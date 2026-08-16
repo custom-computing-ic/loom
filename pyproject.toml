@@ -3,15 +3,15 @@ requires = ["setuptools>=61", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "loom-ir"
+name = "loom-agent"
 version = "0.2.0"
-description = "Schema validation and graph rewriting for Heterograph IRs"
+description = "Task orchestration, contracts"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "pydantic>=2",
+    "pydantic-ai>=1",
 ]
 
 [tool.setuptools.packages.find]
 include = ["loom*"]
-

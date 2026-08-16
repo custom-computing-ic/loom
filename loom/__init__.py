@@ -1,15 +1,25 @@
-"""Loom: schema validation and graph lowering for Heterograph IRs."""
+"""Loom: domain-neutral orchestration and optional graph-IR support."""
 
-from .ir.ir_schema import (
-    Issue,
-    IRSchema,
-    Severity,
-    ValidationReport,
+from .core import (
+    Contract,
+    ContractException,
+    ContractResult,
+    Pipeline,
+    PipelineResult,
+    Result,
+    Task,
+    TaskResult,
+    Verifier,
 )
 
 __all__ = [
-    "Issue",
-    "IRSchema",
-    "Severity",
-    "ValidationReport",
+    "Result",
+    "Task",
+    "TaskResult",
+    "Pipeline",
+    "PipelineResult",
+    "Contract",
+    "ContractException",
+    "ContractResult",
+    "Verifier",
 ]

@@ -3,7 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 from heterograph import HGraph
-from loom.ir import IRSchema, Issue, Severity
+from loom.graphite import GraphSchema, Issue, Severity
 
 class QInt(BaseModel):
     signed: bool
@@ -115,7 +115,7 @@ def rule_single_output(graph: HGraph) -> list[Issue]:
     return [Issue(Severity.ERROR, "graph", message)]
 
 
-NN_IR = IRSchema(
+NN_IR = GraphSchema(
     name="NN-IR",
     vertex={
         "Input": InputProps, "Embedding": EmbeddingProps, "Dense": DenseProps,

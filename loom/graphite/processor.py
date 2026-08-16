@@ -1,12 +1,14 @@
 from heterograph.hgraph import HGraph
 from heterograph.query.qgraph import QGraph
-from .match_policy import IsoMatchPolicy
+from .match_strategy import IsoMatchStrategy
 
-class Processor:
+class GraphProcessor:
     """Match AQL patterns and apply one in-place rewrite pass."""
-    def __init__(self, *, match_policy=IsoMatchPolicy(), snapshot=True):
-        """Create a processor with an optional match policy and snapshots."""
-        self.match_policy = match_policy
+    def __init__(self, *, match_strategy=None, snapshot=True):
+        """Create a processor with an optional match strategy and snapshots."""
+        self.match_strategy = (
+            IsoMatchStrategy() if match_strategy is None else match_strategy
+        )
         self.snapshot = snapshot
         if snapshot:
             from heterograph.webview import WebView
@@ -28,7 +30,7 @@ class Processor:
         if capture:
             self.webview.add_graph(g, title=f"original #{snapshot_number}")
 
-        matches, pattern = self.match_policy.find_matches(
+        matches, pattern = self.match_strategy.find_matches(
             g=g, select=select, where=where, **kwargs)
 
         modified = False
@@ -51,7 +53,7 @@ class Processor:
     def snapshot_view(self):
         """Display the captured snapshots in the processor's WebView."""
         if self.webview is None:
-            raise RuntimeError("snapshot_view() requires Processor(snapshot=True).")
+            raise RuntimeError("snapshot_view() requires GraphProcessor(snapshot=True).")
         return self.webview.run()
 
 
