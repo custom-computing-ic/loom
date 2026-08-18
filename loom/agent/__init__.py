@@ -2,7 +2,8 @@
 
 from .provider import Provider, PydanticAIProvider
 from .task_gen import TaskGen, TaskSource
-from .loop import Agent, AgentContext, AgentLoop, PipelineRunner, TaskFactories
+from .agent import Agent, AgentContext, AgentLoop
+from .runner import PipelineRunner, TaskFactories
 
 __all__ = [
     "Agent",

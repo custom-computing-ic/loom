@@ -34,7 +34,8 @@ class LoweringPipeline(Pipeline):
         }
 
     def __init__(self, task_factories=None):
-        super().__init__(name="keras-to-op-ir", task_factories=task_factories)
+        super().__init__(name="keras-to-op-ir", 
+                         task_factories=task_factories)
         self.import_model = self.register("import-keras")
         self.lowering = self.register("lower-dense")
         self.source_verifier = Verifier([GraphSchemaContract(NN_IR)])

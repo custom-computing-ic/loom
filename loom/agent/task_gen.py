@@ -10,7 +10,8 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 
 from ..core import ContractException, Pipeline, Task
-from .loop import AgentContext, TaskFactories, TaskFactory
+from .agent import AgentContext
+from .runner import TaskFactories, TaskFactory
 from .provider import Provider
 
 

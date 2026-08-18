@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+import os
 from typing import Type
 
 from pydantic import BaseModel
@@ -49,6 +50,7 @@ class PydanticAIProvider(Provider):
         return f"{prefix}:{self.model}"
 
     def generate(self, prompt: str, output_type: Type[BaseModel]) -> BaseModel:
+        self._check_environment()
         try:
             from pydantic_ai import Agent
         except ImportError as error:
@@ -68,3 +70,19 @@ class PydanticAIProvider(Provider):
             ),
         )
         return agent.run_sync(prompt).output
+
+    def _check_environment(self) -> None:
+        required = {
+            "openai": (
+                "AZURE_OPENAI_DEPLOYMENT_NAME",
+                "AZURE_OPENAI_API_KEY",
+            ),
+            "claude": ("CLAUDE_API_KEY",),
+            "anthropic": ("CLAUDE_API_KEY",),
+        }[self.provider]
+        missing = [name for name in required if not os.getenv(name)]
+        if missing:
+            raise EnvironmentError(
+                f"Missing environment variable(s) for {self.provider}: "
+                + ", ".join(missing)
+            )
