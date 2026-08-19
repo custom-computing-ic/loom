@@ -1,9 +1,8 @@
-"""Domain-neutral task orchestration and verification."""
+"""Domain-neutral task orchestration."""
 
 from .result import PipelineResult, Result, TaskResult
 from .task import Task
 from .pipeline import Pipeline
-from .contract import Contract, ContractException, ContractResult, Verifier
 
 __all__ = [
     "Result",
@@ -11,8 +10,4 @@ __all__ = [
     "PipelineResult",
     "Task",
     "Pipeline",
-    "Contract",
-    "ContractException",
-    "ContractResult",
-    "Verifier",
 ]

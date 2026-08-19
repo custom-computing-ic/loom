@@ -1,12 +1,10 @@
 # Loom
 
-Loom provides small, domain-neutral building blocks for executing Tasks,
-composing them in Pipelines, and verifying their results with Contracts. It is
-designed to keep an AI-generated Task bounded and independently verifiable.
+Loom provides small, domain-neutral building blocks for executing Tasks and
+composing them in Pipelines. It is designed to keep an AI-generated Task
+bounded and independently verifiable.
 
-Graph-IR support currently lives in `loom.graphite`. It is intentionally
-separate from the orchestration core and can later move to Graphite without
-affecting users of `loom.core`, such as Artisan.
+Graph-IR support and Contracts live in the separate Graphite package.
 
 ## Architecture
 
@@ -18,9 +16,6 @@ AI-generated or human-written Task
                 |
                 v
 Pipeline composes Tasks and returns PipelineResult
-                |
-                v
-Verifier evaluates Contracts for the selected result
 ```
 
 `TaskResult` and `PipelineResult` both extend `Result`. A Contract evaluates
@@ -30,14 +25,11 @@ the explicit result supplied to it; it does not own or run a Pipeline.
 
 ```python
 from loom.core import (
-    Contract,
-    ContractResult,
     Pipeline,
     PipelineResult,
     Result,
     Task,
     TaskResult,
-    Verifier,
 )
 ```
 
@@ -75,12 +67,17 @@ class CompilerPipeline(Pipeline):
 `repeat()` stops when its Task returns `modified=False`. Its result metadata
 records the iteration count and whether it converged.
 
-## Contracts and verification
+## Graphite contracts
 
-Contracts judge a result after a Task or Pipeline has executed. A caller can
-invoke a Verifier explicitly, or a domain-specific Pipeline can do so as part
-of its own orchestration. Contracts can validate an AI-generated Task directly,
-a whole Pipeline result, or a selected Task result from a Pipeline result.
+Graphite contracts judge a result after a Task or Pipeline has executed. A
+caller can invoke a `Verifier` explicitly, or a domain-specific Pipeline can do
+so as part of its own orchestration. Contracts can validate an AI-generated Task
+directly, a whole Pipeline result, or a selected Task result from a Pipeline
+result.
+
+```python
+from graphite import Verifier
+```
 
 ```python
 task_result = candidate_task.execute(input)
@@ -93,16 +90,17 @@ checks = Verifier([candidate_contract]).verify(
 )
 ```
 
-A Contract implements `evaluate(result: Result) -> ContractResult`. The
+A Contract implements `evaluate(result) -> ContractResult`, where `result` has
+an `output` attribute. The
 Verifier keeps all normal failures so they can be used as feedback for the next
 agent revision.
 
 ## Graphite support
 
-`loom.graphite` provides the current Heterograph-specific implementation:
+Graphite provides the Heterograph-specific implementation:
 
 ```python
-from loom.graphite import (
+from graphite import (
     DfsMatchStrategy,
     GraphProcessor,
     GraphSchema,
@@ -192,21 +190,3 @@ returns a factory for the next pipeline attempt. `PydanticAIProvider` owns the
 provider-specific model routing; another backend can implement `Provider`
 without changing `TaskGen`.
 
-## Examples
-
-Loom requires Python 3.10+ and Heterograph for the Graphite examples. Create
-the supplied environment:
-
-```bash
-conda env create -f examples/environment.yml
-conda activate loom-examples
-```
-
-Run the examples from the repository root:
-
-```bash
-python examples/validation/main.py
-python examples/processor_tests/main.py
-python examples/lowering/main.py
-python examples/agent/main.py
-```

@@ -1,15 +1,11 @@
-"""Loom: domain-neutral orchestration and optional graph-IR support."""
+"""Loom: domain-neutral task orchestration."""
 
 from .core import (
-    Contract,
-    ContractException,
-    ContractResult,
     Pipeline,
     PipelineResult,
     Result,
     Task,
     TaskResult,
-    Verifier,
 )
 
 __all__ = [
@@ -18,8 +14,4 @@ __all__ = [
     "TaskResult",
     "Pipeline",
     "PipelineResult",
-    "Contract",
-    "ContractException",
-    "ContractResult",
-    "Verifier",
 ]
