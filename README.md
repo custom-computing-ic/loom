@@ -162,9 +162,10 @@ execution result and contract results. An agent can use this feedback to
 revise the draft task and retry until the contracts pass or the loop reaches
 its attempt limit.
 
-The lowering integration example is in `examples/agent`. Its draft currently
-contains an intentionally disabled OP-IR update so the contract-failure path
-can be exercised; uncomment those lines to restore the successful task.
+The lowering integration example lives in the Graphite repository, under
+`examples/agent`. It starts from a draft task whose OP-IR update is disabled,
+so the first attempt fails a contract, and runs this loop until the revised
+draft passes.
 
 ### Pydantic AI task generation
 
