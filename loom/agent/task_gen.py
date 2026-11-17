@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import importlib.util
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Iterable
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
-
-from graphite import ContractException
 
 from ..core import Pipeline, Task
 from .agent import AgentContext
@@ -68,12 +67,24 @@ class TaskGen:
         return {name: context.draft[name] for name in self.tasks}
 
     @staticmethod
-    def _prompt(name: str, source: str, failure: Exception | None) -> str:
+    def _contract_failures(failure: Exception | None) -> Mapping[str, Any] | None:
+        """Return per-contract failures when ``failure`` carries them.
+
+        Contract types live outside Loom, so the shape is duck-typed rather
+        than imported: ``loom.agent`` stays usable without a contract package
+        installed.
+        """
+        failures = getattr(failure, "failures", None)
+        return failures if isinstance(failures, Mapping) and failures else None
+
+    @classmethod
+    def _prompt(cls, name: str, source: str, failure: Exception | None) -> str:
         feedback = "No execution feedback is available yet."
-        if isinstance(failure, ContractException):
+        contract_failures = cls._contract_failures(failure)
+        if contract_failures is not None:
             feedback = "Contract failures:\n" + "\n".join(
-                f"- {contract}: {result.failures}"
-                for contract, result in failure.failures.items()
+                f"- {contract}: {getattr(result, 'failures', result)}"
+                for contract, result in contract_failures.items()
             )
         elif failure is not None:
             feedback = f"Task/runtime exception: {type(failure).__name__}: {failure}"
