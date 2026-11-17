@@ -176,18 +176,27 @@ pip install loom-workflow
 ```
 
 ```python
-from loom.agent import PydanticAIProvider, TaskGen
+import os
+
+from loom.agent import ClaudeProvider, TaskGen
 
 agent = TaskGen(
-    provider=PydanticAIProvider(provider="openai", model="gpt-5.6-sol"),
-    tasks={"lower-dense"},
+    provider=ClaudeProvider({
+        "model": "claude-sonnet-4-6",
+        "api_key": os.environ["CLAUDE_API_KEY"],
+    }),
+    task="lower-dense",
+    instructions="Lower supported Dense operations using GraphProcessor.",
+    mode_resume=False,
 )
 result = AgentLoop(runner).run(input_value, agent)
 ```
 
-`TaskGen` sends only the selected draft module and execution feedback to its
-provider. It writes the returned replacement module into that draft path and
-returns a factory for the next pipeline attempt. `PydanticAIProvider` owns the
-provider-specific model routing; another backend can implement `Provider`
-without changing `TaskGen`.
-
+`TaskGen` generates one named task. It sends its required task instructions,
+the task's draft module, and execution feedback to its provider. It writes the
+returned replacement module into that draft path and returns a factory for the
+next pipeline attempt. `mode_resume=False` is the default and clears the draft
+before asking for a fresh initial implementation; `mode_resume=True` runs an
+existing draft before requesting a revision.
+`ClaudeProvider` owns the Anthropic-specific model routing; another backend can
+implement `Provider` without changing `TaskGen`.

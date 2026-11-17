@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import logging
 from typing import Any, Callable, Mapping, Protocol
 
 from ..core import Pipeline, PipelineResult, Task
@@ -16,6 +17,20 @@ from .runner import PipelineRunner
 
 TaskFactory = Callable[[Pipeline], Task]
 TaskFactories = Mapping[str, TaskFactory]
+logger = logging.getLogger(__name__)
+
+
+def _failure_feedback(failure: Exception) -> str:
+    """Format contract failures as the feedback supplied to a revising agent."""
+    failures = getattr(failure, "failures", None)
+    if isinstance(failures, Mapping):
+        return "Contract failures:\n" + "\n".join(
+            f"- {contract}: {result.failures}"
+            for contract, result in failures.items()
+        )
+    return f"Task/runtime exception: {type(failure).__name__}: {failure}"
+
+
 @dataclass(frozen=True)
 class AgentContext:
     """Dependencies exposed to an agent implementation."""
@@ -58,19 +73,35 @@ class AgentLoop:
 
     def run(self, input: Any, agent: Agent) -> PipelineResult:
         context = AgentContext(self.runner, input)
-        task_factories = agent.initial_tasks(context)
         last_failure: Exception | None = None
 
-        for _ in range(self.max_attempts):
+        for attempt in range(1, self.max_attempts + 1):
             try:
-                return context.run(task_factories)
+                if last_failure is None:
+                    logger.info("Agent: generating initial task candidate.")
+                    task_factories = agent.initial_tasks(context)
+                else:
+                    logger.info("Agent feedback:\n%s",
+                                _failure_feedback(last_failure))
+                    logger.info("Agent: generating revised task candidate.")
+                    task_factories = agent.revise_tasks(
+                        context, failure=last_failure
+                    )
+                logger.info("Agent: running candidate (attempt %d/%d).",
+                            attempt, self.max_attempts)
+                result = context.run(task_factories)
+                logger.info("Agent: candidate succeeded on attempt %d.", attempt)
+                return result
             except Exception as failure:
                 # ContractException carries the PipelineResult and contract
                 # results; other exceptions are task/runtime errors.
                 last_failure = failure
-                task_factories = agent.revise_tasks(
-                    context, failure=failure
+                logger.warning(
+                    "Agent: attempt %d failed (%s: %s).",
+                    attempt, type(failure).__name__, failure,
                 )
+                if attempt == self.max_attempts:
+                    break
 
         raise RuntimeError(
             f"agent loop exceeded max_attempts ({self.max_attempts}); "

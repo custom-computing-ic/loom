@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -24,47 +25,84 @@ class TaskSource(BaseModel):
 
 
 class TaskGen:
-    """Generate selected task implementations through a generic provider."""
+    """Generate one task implementation through a generic provider."""
 
-    def __init__(self, *, provider: Provider, tasks: Iterable[str]):
+    def __init__(self, *, provider: Provider, task: str, instructions: str,
+                 mode_resume: bool = False):
         if not isinstance(provider, Provider):
             raise TypeError("provider must be a Provider instance.")
         self.provider = provider
-        self.tasks = frozenset(tasks)
-        if not self.tasks:
-            raise ValueError("tasks must contain at least one task name.")
+        if not isinstance(task, str) or not task.strip():
+            raise ValueError("task must be a non-empty string.")
+        self.task = task.strip()
+        if not isinstance(instructions, str) or not instructions.strip():
+            raise ValueError("instructions must be a non-empty string.")
+        self.instructions = instructions.strip()
+        if not isinstance(mode_resume, bool):
+            raise TypeError("mode_resume must be a boolean.")
+        self.mode_resume = mode_resume
 
     def initial_tasks(self, context: AgentContext) -> TaskFactories:
-        return self.build_tasks(context)
+        path = self._selected_path(context)
+        if self.mode_resume:
+            return {self.task: self._factory(
+                path, self._task_class_name(path.read_text(encoding="utf-8"), path)
+            )}
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("", encoding="utf-8")
+        return self.build_tasks(context, source="")
 
     def revise_tasks(self, context: AgentContext, *,
                      failure: Exception) -> TaskFactories:
         return self.build_tasks(context, failure=failure)
 
     def build_tasks(self, context: AgentContext, *,
-                    failure: Exception | None = None) -> TaskFactories:
-        selected = self._selected_paths(context)
-        factories: dict[str, TaskFactory] = {}
-        for name, path in selected.items():
-            current_source = path.read_text(encoding="utf-8") if path.exists() else ""
-            proposal = self.provider.generate(
-                self._prompt(name, current_source, failure), TaskSource
-            )
-            if not isinstance(proposal, TaskSource):
-                raise TypeError("provider returned an invalid task source.")
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(proposal.source, encoding="utf-8")
-            factories[name] = self._factory(path, proposal.class_name)
-        return factories
+                    failure: Exception | None = None,
+                    source: str | None = None) -> TaskFactories:
+        path = self._selected_path(context)
+        current_source = (
+            path.read_text(encoding="utf-8") if source is None and path.exists()
+            else source or ""
+        )
+        proposal = self.provider.submit(
+            self._prompt(self.task, current_source, failure), TaskSource
+        )
+        if not isinstance(proposal, TaskSource):
+            raise TypeError("provider returned an invalid task source.")
+        compile(proposal.source, str(path), "exec")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(proposal.source, encoding="utf-8")
+        return {self.task: self._factory(path, proposal.class_name)}
 
-    def _selected_paths(self, context: AgentContext) -> dict[str, Path]:
-        unknown = self.tasks - context.editable_tasks
-        if unknown:
-            raise ValueError(f"Tasks are not editable: {sorted(unknown)!r}")
-        missing = self.tasks - set(context.draft)
-        if missing:
-            raise KeyError(f"Tasks have no draft path: {sorted(missing)!r}")
-        return {name: context.draft[name] for name in self.tasks}
+    @staticmethod
+    def _task_class_name(source: str, path: Path) -> str:
+        """Find the direct Task subclass in an existing draft module."""
+        module = ast.parse(source, filename=str(path))
+        classes = [
+            node.name
+            for node in module.body
+            if isinstance(node, ast.ClassDef)
+            and any(
+                (isinstance(base, ast.Name) and base.id == "Task")
+                or (isinstance(base, ast.Attribute) and base.attr == "Task")
+                for base in node.bases
+            )
+        ]
+        if len(classes) != 1:
+            raise ValueError(
+                f"Expected exactly one direct Task subclass in {path}; "
+                f"found {classes!r}."
+            )
+        return classes[0]
+
+    def _selected_path(self, context: AgentContext) -> Path:
+        if self.task not in context.editable_tasks:
+            raise ValueError(f"Task is not editable: {self.task!r}")
+        try:
+            return context.draft[self.task]
+        except KeyError as error:
+            raise KeyError(f"Task has no draft path: {self.task!r}") from error
+
 
     @staticmethod
     def _contract_failures(failure: Exception | None) -> Mapping[str, Any] | None:
@@ -77,10 +115,11 @@ class TaskGen:
         failures = getattr(failure, "failures", None)
         return failures if isinstance(failures, Mapping) and failures else None
 
-    @classmethod
-    def _prompt(cls, name: str, source: str, failure: Exception | None) -> str:
+
+    def _prompt(self, name: str, source: str,
+                failure: Exception | None) -> str:
         feedback = "No execution feedback is available yet."
-        contract_failures = cls._contract_failures(failure)
+        contract_failures = self._contract_failures(failure)
         if contract_failures is not None:
             feedback = "Contract failures:\n" + "\n".join(
                 f"- {contract}: {getattr(result, 'failures', result)}"
@@ -89,6 +128,7 @@ class TaskGen:
         elif failure is not None:
             feedback = f"Task/runtime exception: {type(failure).__name__}: {failure}"
         return (
+            f"Task instructions:\n{self.instructions}\n\n"
             f"Editable task name: {name}\n\n"
             f"Current draft module:\n```python\n{source}\n```\n\n"
             f"Execution feedback:\n{feedback}\n\n"
